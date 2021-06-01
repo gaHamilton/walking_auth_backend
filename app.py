@@ -71,7 +71,7 @@ def decisionTree(trainData, testData):
 
     # Prediction using gini
     y_pred_gini = prediction(x_test, clf_gini)
-    #cal_accuracy(y_test, y_pred_gini)
+    # cal_accuracy(y_test, y_pred_gini)
 
     dbMongo = mongo.db.AccelData.ModelResponse
     newEl = {'PredictedValues': y_pred_gini, 'Method': 'Gini'}
@@ -83,6 +83,28 @@ def decisionTree(trainData, testData):
     # cal_accuracy(y_test, y_pred_entropy)
 
 
+def createProfile(data, label, length, user):
+    # Perfil basado en distancias 3D entre los puntos
+
+    distances = []
+    for i in range(length - 1):
+        x_ = data[i].get('X')
+        y_ = data[i].get('Y')
+        z_ = data[i].get('Z')
+
+        x_1 = data[i + 1].get('X')
+        y_1 = data[i + 1].get('Y')
+        z_1 = data[i + 1].get('Z')
+
+        xS = (x_1 - x_) ** 2
+        yS = (y_1 - y_) ** 2
+        zS = (z_1 - z_) ** 2
+        dist = (xS + yS + zS) ** 1 / 2
+        distances.append(dist)
+
+    return distances
+
+
 @app.route('/Train', methods=['POST'])
 def postAccData():
     # Recibir los valores del json
@@ -92,31 +114,34 @@ def postAccData():
     dataLength = rJson.get('Length')
     dataLabel = rJson.get('Label')
 
+    accelData = createProfile(accelData, dataLabel, dataLength, user)
+
+    dbMongo = mongo.db.AccelData.Profile
+
     if dataLabel == "?":
-        testDataframe = pd.DataFrame(accelData, columns=['Label','X', 'Y', 'Z'])
+        testDataframe = pd.DataFrame(accelData)
         query = {'User': user}
-        dbMongo = mongo.db.AccelData.Data
-        queryRes = dbMongo.find_one(query,{'_id':0})
+        queryRes = dbMongo.find_one(query, {'_id': 0})
         if queryRes is None:
             return "Usuario no existente"
-        queryData = queryRes.get('AccelData')
-        trainDataframe = pd.DataFrame(queryData, columns=['Label','X', 'Y', 'Z'])
+        queryData = queryRes.get('Profile')
+        trainDataframe = pd.DataFrame(queryData)
 
         decisionTree(trainDataframe, testDataframe)
         return 'Modelo generado correctamente'
     else:
         # crear el elemento e ingresarlo a la base de datos
-        dbMongo = mongo.db.AccelData.Data
-        newEl = {'User': user, 'AccelData': accelData, 'Length': dataLength, 'Label': dataLabel}
+        newEl = {'User': user, 'Profile': accelData, 'Label': dataLabel}
         dbMongo.insert_one(newEl)
         return 'Creado Exitosamente'
 
 
 @app.route('/Train', methods=['GET'])
 def getAccData():
-    dbMongo = mongo.db.AccelData.Data
+    dbMongo = mongo.db.AccelData.Profile
     accelData = dbMongo.find()
-    res = [{'user_id': acc['user_id'], 'AccelData': acc['AccelData'], 'Label': acc['Label']} for acc in accelData]
+    res = [{'User': acc['User'], 'Profile': acc['AccelData'], 'Label': acc['Label']} for acc in accelData]
+
     return Response(json.dumps(res), mimetype='application/json')
 
 
