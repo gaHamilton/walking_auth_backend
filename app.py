@@ -140,9 +140,13 @@ def postAccData():
 def getAccData():
     dbMongo = mongo.db.AccelData.Profile
     accelData = dbMongo.find()
-    res = [{'User': acc['User'], 'Profile': acc['AccelData'], 'Label': acc['Label']} for acc in accelData]
+    res = [{'User': acc['User'], 'Profile': acc['Profile'], 'Label': acc['Label']} for acc in accelData]
 
     return Response(json.dumps(res), mimetype='application/json')
+
+@app.route('/', methods=['GET'])
+def mainPage():
+    return "This page is to see if everything is running correctly"
 
 
 if __name__ == '__main__':
