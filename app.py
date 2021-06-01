@@ -131,7 +131,7 @@ def postAccData():
         return 'Modelo generado correctamente'
     else:
         # crear el elemento e ingresarlo a la base de datos
-        newEl = {'User': user, 'Profile': accelData, 'Label': dataLabel}
+        newEl = {'User': user, 'Length': dataLength, 'Profile': accelData, 'Label': dataLabel}
         dbMongo.insert_one(newEl)
         return 'Creado Exitosamente'
 
