@@ -147,6 +147,20 @@ def getAccData():
 
     return Response(json.dumps(res), mimetype='application/json')
 
+
+@app.route('/Exists', methods=['GET'])
+def checkUserExistence():
+    rJson = request.get_json()
+    user = rJson.get('User')
+    dbMongo = mongo.db.AccelData.Data
+    query = {'User': user}
+    queryRes = dbMongo.find_one(query, {'_id': 0})
+    if queryRes is None:
+        return 'None'
+    return 'Exists'
+
+
+
 @app.route('/', methods=['GET'])
 def mainPage():
     return "This page is to see if everything is running correctly"
