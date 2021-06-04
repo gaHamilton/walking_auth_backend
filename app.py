@@ -114,14 +114,14 @@ def postAccData():
     dataLength = rJson.get('Length')
     dataLabel = rJson.get('Label')
 
-    accelData = createProfile(accelData, dataLabel, dataLength, user)
+    distanceData = createProfile(accelData, dataLabel, dataLength, user)
 
-    dbMongo = mongo.db.AccelData.Profile
-
+    dbMongoP = mongo.db.AccelData.Profile
+    dbMongo = mongo.db.AccelData.Data
     if dataLabel == "?":
         testDataframe = pd.DataFrame(accelData)
         query = {'User': user}
-        queryRes = dbMongo.find_one(query, {'_id': 0})
+        queryRes = dbMongoP.find_one(query, {'_id': 0})
         if queryRes is None:
             return "Usuario no existente"
         queryData = queryRes.get('Profile')
@@ -131,7 +131,10 @@ def postAccData():
         return 'Modelo generado correctamente'
     else:
         # crear el elemento e ingresarlo a la base de datos
-        newEl = {'User': user, 'Length': dataLength, 'Profile': accelData, 'Label': dataLabel}
+        newEl = {'User': user, 'Length': dataLength, 'Profile': distanceData, 'Label': dataLabel}
+        dbMongoP.insert_one(newEl)
+        # Tambien se guarda la informacion directa del acelerometro para pruebas
+        newEl = {'User': user, 'Length': dataLength, 'AccelData': accelData, 'Label': dataLabel}
         dbMongo.insert_one(newEl)
         return 'Creado Exitosamente'
 
