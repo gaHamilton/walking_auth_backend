@@ -148,7 +148,7 @@ def getAccData():
     return Response(json.dumps(res), mimetype='application/json')
 
 
-@app.route('/Exists', methods=['GET'])
+@app.route('/Exists', methods=['POST', 'GET'])
 def checkUserExistence():
     rJson = request.get_json()
     user = rJson.get('User')
