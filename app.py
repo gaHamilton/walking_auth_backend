@@ -118,7 +118,17 @@ def postAccData():
 
     dbMongoP = mongo.db.AccelData.Profile
     dbMongo = mongo.db.AccelData.Data
+
+    dbMongoP1 = mongo.db.AccelData.ProfilePrueba
+    dbMongo1 = mongo.db.AccelData.DataPrueba
     if dataLabel == "?":
+        # crear el elemento e ingresarlo a la base de datos
+        newEl = {'User': user, 'Length': dataLength, 'Profile': distanceData, 'Label': dataLabel}
+        dbMongoP1.insert_one(newEl)
+        # Tambien se guarda la informacion directa del acelerometro para pruebas
+        newEl = {'User': user, 'Length': dataLength, 'AccelData': accelData, 'Label': dataLabel}
+        dbMongo1.insert_one(newEl)
+
         testDataframe = pd.DataFrame(accelData)
         query = {'User': user}
         queryRes = dbMongoP.find_one(query, {'_id': 0})
