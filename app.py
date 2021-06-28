@@ -1,11 +1,20 @@
 from flask import Flask, request, Response
 from flask_pymongo import PyMongo
 import json
-from sklearn.metrics import confusion_matrix
+
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import classification_report
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 import pandas as pd
+import numpy as np
 
 app = Flask(__name__)
 MONGO_URL = "mongodb+srv://gHamilton:***REMOVED***@cluster0.j7fth.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"
@@ -16,71 +25,62 @@ mongo = PyMongo(app)
 # Function to split the dataset
 def splitdataset(trainData, testData):
     # Separating the target variable
-    x_train = trainData.values[:, 1:5]
-    x_test = testData.values[:, 1:5]
+    x_train = trainData.values[:, 1:]
+    x_test = testData.values[:, 1:55]
     y_train = trainData.values[:, 0]
     y_test = testData.values[:, 0]
 
     return x_train, x_test, y_train, y_test
 
 
-# Function to perform training with giniIndex.
-def train_using_gini(x_train, y_train):
-    # Creating the classifier object
-    clf_gini = DecisionTreeClassifier(criterion="gini", random_state=100, max_depth=3, min_samples_leaf=5)
-
-    # Performing training
-    clf_gini.fit(x_train, y_train)
-    return clf_gini
-
-
-# Function to perform training with entropy.
-def train_using_entropy(x_train, y_train):
-    # Decision tree with entropy
-    clf_entropy = DecisionTreeClassifier(criterion="entropy", random_state=100, max_depth=3, min_samples_leaf=5)
-
-    # Performing training
-    clf_entropy.fit(x_train, y_train)
-    return clf_entropy
-
-
-# Function to make predictions
-def prediction(X_test, clf_object):
-    # Predicton on test with giniIndex
-    y_pred = clf_object.predict(X_test)
-
-    return y_pred
-
-
 # Function to calculate accuracy
 def cal_accuracy(y_test, y_pred):
-    print("Confusion Matrix: ", confusion_matrix(y_test, y_pred))
+    #print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
 
-    print("Accuracy : ", accuracy_score(y_test, y_pred) * 100)
+    #print("Accuracy : \n", accuracy_score(y_test, y_pred) * 100)
 
-    print("Report : ", classification_report(y_test, y_pred))
+    #print("Report : \n", classification_report(y_test, y_pred))
+
+    #print("F1 Score: \n", f1_score(y_test, y_pred, pos_label="Real"))
+    return f1_score(y_test, y_pred, pos_label="Real")
 
 
-def decisionTree(trainData, testData):
+def decisionModels(trainData, testData):
     # Separar label de la informacion y poner los datos en x_ y los labels en y_
     x_train, x_test, y_train, y_test = splitdataset(trainData, testData)
-    clf_gini = train_using_gini(x_train, y_train)
-    clf_entropy = train_using_entropy(x_train, y_train)
 
-    # Operational Phase
+    imp = SimpleImputer(missing_values=np.nan, strategy='mean')
+    imp = imp.fit(x_train)
+    x_train_imp = imp.transform(x_train)
+    imp = imp.fit(x_test)
+    x_test_imp = imp.transform(x_test)
 
-    # Prediction using gini
-    y_pred_gini = prediction(x_test, clf_gini)
-    # cal_accuracy(y_test, y_pred_gini)
+    # Uso de multiples clasificadores para pruebas
+    classifiers = [
+        KNeighborsClassifier(3),
+        SVC(kernel="linear", C=0.025),
+        SVC(gamma=2, C=1),
+        GaussianProcessClassifier(1.0 * RBF(1.0)),
+        DecisionTreeClassifier(criterion="gini", max_depth=5),
+        DecisionTreeClassifier(criterion="entropy", max_depth=5),
+        RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
+        MLPClassifier(alpha=1, max_iter=1000),
+        AdaBoostClassifier(),
+        GaussianNB(),
+        QuadraticDiscriminantAnalysis()]
+    names = ["Nearest Neighbors", "Linear SVM", "RBF SVM", "Gaussian Process",
+             "Decision Tree Gini", "Decision Tree Entropy", "Random Forest", "Neural Net", "AdaBoost",
+             "Naive Bayes", "QDA"]
 
-    dbMongo = mongo.db.AccelData.ModelResponse
-    newEl = {'PredictedValues': y_pred_gini, 'Method': 'Gini'}
-    dbMongo.insert_one(newEl)
-
-    # print("Results Using Entropy:")
-    # Prediction using entropy
-    # y_pred_entropy = prediction(x_test, clf_entropy)
-    # cal_accuracy(y_test, y_pred_entropy)
+    res = "Model Name --> Accuracy --> F1 Score\n"
+    for i in range(len(classifiers)):
+        clf = classifiers[i]
+        name = names[i]
+        clf.fit(x_train_imp, y_train)
+        accur = clf.score(x_test_imp, y_test)
+        y_pred = clf.predict(x_test_imp)
+        res += name + " --> \t\t" + str(accur) + " ------> \t" + str(cal_accuracy(y_test, y_pred)) + "\n"
+    return res
 
 
 def createProfile(data, label, length, user):
@@ -137,7 +137,7 @@ def postAccData():
         queryData = queryRes.get('Profile')
         trainDataframe = pd.DataFrame(queryData)
 
-        decisionTree(trainDataframe, testDataframe)
+        #decisionModels(trainDataframe, testDataframe)
         return 'Modelo generado correctamente'
     else:
         # crear el elemento e ingresarlo a la base de datos
@@ -170,10 +170,64 @@ def checkUserExistence():
     return 'Exists'
 
 
+def chunkIt(seq, num):
+    avg = len(seq) / float(num)
+    out = []
+    last = 0.0
+
+    while last < len(seq):
+        out.append(seq[int(last):int(last + avg)])
+        last += avg
+
+    return out
+
+
+@app.route('/Test', methods=['GET', 'POST'])
+def testModels():
+    rJson = request.get_json()
+    user = rJson.get('User')
+    number = rJson.get('Number')
+    query = {'User': user}
+    dbMongo = mongo.db.AccelData.Profile
+    queryRes = dbMongo.find_one(query, {'_id': 0})
+
+    queryData = queryRes.get('Profile')[:54]
+    queryLabel = queryRes.get('Label')
+    dataList = chunkIt(queryData, int(number))
+
+    dataList_Label = []
+    for i in range(len(dataList)):
+        dataList_Label.append([queryLabel])
+        for j in dataList[i]:
+            dataList_Label[i].append(j)
+
+    trainDataframe = pd.DataFrame(dataList_Label)
+
+    dbMongo = mongo.db.AccelData.ProfilePrueba
+    queryRes = dbMongo.find()
+    dataList = []
+    dataList_Label = []
+    for i in queryRes:
+        tempList = chunkIt(i['Profile'][:54], number)
+        for x in tempList:
+            dataList.append([i['User'], x, i['Label']])
+
+    for i in range(len(dataList)):
+        if dataList[i][0] == user:
+            dataList_Label.append([queryLabel])
+        else:
+            dataList_Label.append([dataList[i][2]])
+
+        for j in dataList[i][1]:
+            dataList_Label[i].append(j)
+    testDataframe = pd.DataFrame(dataList_Label)
+
+    return "Number of partitions =" + str(number)+"\n"+decisionModels(testDataframe, trainDataframe)
+
 
 @app.route('/', methods=['GET'])
 def mainPage():
-    return "This page is to see if everything is running correctly"
+    return "This page is to see if the app is running correctly"
 
 
 if __name__ == '__main__':
