@@ -1,7 +1,6 @@
 from flask import Flask, request, Response
 from flask_pymongo import PyMongo
 import json
-
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, f1_score
 from sklearn.neural_network import MLPClassifier
@@ -17,9 +16,11 @@ import pandas as pd
 import numpy as np
 
 app = Flask(__name__)
-MONGO_URL = "mongodb+srv://gHamilton:***REMOVED***@cluster0.j7fth.mongodb.net/myFirstDatabase?retryWrites=true&w=majority"
+MONGO_URL = "mongodb+srv://gHamilton:***REMOVED***@cluster0.j7fth.mongodb.net/myFirstDatabase?retryWrites=true&w=majority&ssl=true&ssl_cert_reqs=CERT_NONE"
 app.config["MONGO_URI"] = MONGO_URL
 mongo = PyMongo(app)
+trueLabel = "Real"
+falseLabel = "?"
 
 
 # Function to split the dataset
@@ -35,14 +36,14 @@ def splitdataset(trainData, testData):
 
 # Function to calculate accuracy
 def cal_accuracy(y_test, y_pred):
-    #print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+    # print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
 
-    #print("Accuracy : \n", accuracy_score(y_test, y_pred) * 100)
+    # print("Accuracy : \n", accuracy_score(y_test, y_pred) * 100)
 
-    #print("Report : \n", classification_report(y_test, y_pred))
+    # print("Report : \n", classification_report(y_test, y_pred))
 
-    #print("F1 Score: \n", f1_score(y_test, y_pred, pos_label="Real"))
-    return f1_score(y_test, y_pred, pos_label="Real")
+    # print("F1 Score: \n", f1_score(y_test, y_pred, pos_label="Real"))
+    return f1_score(y_test, y_pred, pos_label=trueLabel)
 
 
 def decisionModels(trainData, testData):
@@ -72,7 +73,7 @@ def decisionModels(trainData, testData):
              "Decision Tree Gini", "Decision Tree Entropy", "Random Forest", "Neural Net", "AdaBoost",
              "Naive Bayes", "QDA"]
 
-    res = "Model Name --> Accuracy --> F1 Score\n"
+    res = "Model Name --> Accuracy --> F1 Score\n -------------------------------\n"
     for i in range(len(classifiers)):
         clf = classifiers[i]
         name = names[i]
@@ -137,7 +138,7 @@ def postAccData():
         queryData = queryRes.get('Profile')
         trainDataframe = pd.DataFrame(queryData)
 
-        #decisionModels(trainDataframe, testDataframe)
+        # decisionModels(trainDataframe, testDataframe)
         return 'Modelo generado correctamente'
     else:
         # crear el elemento e ingresarlo a la base de datos
@@ -170,59 +171,100 @@ def checkUserExistence():
     return 'Exists'
 
 
-def chunkIt(seq, num):
-    avg = len(seq) / float(num)
+def windows(list, length, move):
     out = []
-    last = 0.0
-
-    while last < len(seq):
-        out.append(seq[int(last):int(last + avg)])
-        last += avg
-
+    for i in range(0, len(list) - (length - move), move):
+        out.append(list[i:i + length])
     return out
+
+
+def unifyFreq(dataList, minSize):
+    steps = int(len(dataList) / minSize)
+    out = []
+    for i in range(0, len(dataList), steps):
+        if len(out) >= minSize:
+            break
+        out.append(dataList[i])
+    # print("=============================")
+    # print("Original Len: "+str(len(dataList))+"------transform: "+str(len(out))+" --=-- "+str(steps)+" - > Min Size: "+str(minSize))
+    # print("=============================")
+    return out
+
+
+def findSmallest(dataList):
+    resList = []
+    res = np.inf
+    for i in dataList:
+        resList.append(i)
+        length = int(len(i['Profile']))
+        if length < res:
+            res = length
+    return resList, res
 
 
 @app.route('/Test', methods=['GET', 'POST'])
 def testModels():
     rJson = request.get_json()
     user = rJson.get('User')
-    number = rJson.get('Number')
-    query = {'User': user}
+    size = rJson.get('size')
+    step = rJson.get('steps')
     dbMongo = mongo.db.AccelData.Profile
-    queryRes = dbMongo.find_one(query, {'_id': 0})
-
-    queryData = queryRes.get('Profile')[:54]
-    queryLabel = queryRes.get('Label')
-    dataList = chunkIt(queryData, int(number))
-
-    dataList_Label = []
-    for i in range(len(dataList)):
-        dataList_Label.append([queryLabel])
-        for j in dataList[i]:
-            dataList_Label[i].append(j)
-
-    trainDataframe = pd.DataFrame(dataList_Label)
-
-    dbMongo = mongo.db.AccelData.ProfilePrueba
     queryRes = dbMongo.find()
+
+    queryList, minSize = findSmallest(queryRes)
+
     dataList = []
     dataList_Label = []
-    for i in queryRes:
-        tempList = chunkIt(i['Profile'][:54], number)
+    for i in queryList:
+        # Debido a los diferentes tamanios de sets de datos,
+        # unificar al mas pequenio en los obtenidos en la base de datos
+        unifiedListSize = unifyFreq(i['Profile'], minSize)
+
+        # Una vez se tienen los datos del mismo tamanio, crear ventanas
+        tempList = windows(unifiedListSize, size, step)
+
+        # se le aniade el usuario y label a los datos de la ventanas creando una nueva lista del estilo:
+        # [[Usuario, ventana1, etiqueta],
+        # [Usuario, ventana2, etiqueta], ...]
         for x in tempList:
-            dataList.append([i['User'], x, i['Label']])
+            dataList.append([i['User'], x, falseLabel])
 
     for i in range(len(dataList)):
+        # Si el usuario es el que se va a entrenar a detectar, usa el label de 'Real', de lo contrario usan el label "?"
         if dataList[i][0] == user:
-            dataList_Label.append([queryLabel])
+            dataList_Label.append([trueLabel])
         else:
             dataList_Label.append([dataList[i][2]])
 
+        # Ahora que se tiene el label de los datos, se le aniaden los datos de la ventana, tiene que quedar en una
+        # lista antes de usar pandas o va a quedar como una lista de datos distitna
         for j in dataList[i][1]:
             dataList_Label[i].append(j)
-    testDataframe = pd.DataFrame(dataList_Label)
 
-    return "Number of partitions =" + str(number)+"\n"+decisionModels(testDataframe, trainDataframe)
+    # Pandas para dejar los datos en el formato adecuado a usar por los modelos
+    trainDataframe = pd.DataFrame(dataList_Label)
+    # print(trainDataframe)
+
+    # Se repite el proceso, solo que ahora se usa solo el perfil del usuario a detectar
+    dbMongo = mongo.db.AccelData.ProfilePrueba
+    query = {'User': user}
+    queryRes = dbMongo.find_one(query, {'_id': 0})
+
+    queryData = queryRes.get('Profile')
+    queryList = unifyFreq(queryData, minSize)
+    dataList = windows(queryList, size, step)
+
+    dataList_Label = []
+    for i in range(len(dataList)):
+        dataList_Label.append([trueLabel])
+        for j in dataList[i]:
+            dataList_Label[i].append(j)
+
+    testDataframe = pd.DataFrame(dataList_Label)
+    # print(testDataframe)
+
+    return "User: " + user + "\nWindow Size =" + str(size) + "\n Window displacement= " + str(step)\
+           + "\n" + decisionModels(trainDataframe,testDataframe)
 
 
 @app.route('/', methods=['GET'])
